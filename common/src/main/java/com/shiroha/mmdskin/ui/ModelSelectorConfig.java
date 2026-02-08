@@ -1,10 +1,9 @@
-package com.shiroha.mmdskin.ui.config;
+package com.shiroha.mmdskin.ui;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.shiroha.mmdskin.config.PathConstants;
 import com.shiroha.mmdskin.config.UIConstants;
-import com.shiroha.mmdskin.ui.network.PlayerModelSyncManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -70,13 +69,13 @@ public class ModelSelectorConfig {
                     if (retryCount >= maxRetries) {
                         logger.error("配置加载失败，使用默认配置", e);
                         data = new ConfigData();
-                        saveInternal(true);
+                        save();
                     }
                 }
             }
         } else {
             data = new ConfigData();
-            saveInternal(true);
+            save();
         }
     }
 
@@ -84,17 +83,9 @@ public class ModelSelectorConfig {
      * 保存配置（带冷却和异常处理）
      */
     public synchronized void save() {
-        saveInternal(false);
-    }
-    
-    /**
-     * 内部保存实现
-     * @param force 是否强制保存（跳过冷却检查）
-     */
-    private void saveInternal(boolean force) {
         // 冷却检查，避免频繁保存
         long currentTime = System.currentTimeMillis();
-        if (!force && currentTime - lastSaveTime < SAVE_COOLDOWN) {
+        if (currentTime - lastSaveTime < SAVE_COOLDOWN) {
             return;
         }
         

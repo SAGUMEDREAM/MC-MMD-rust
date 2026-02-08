@@ -1,5 +1,9 @@
- architectury {
+architectury {
     common("fabric", "forge")
+}
+
+loom {
+    accessWidenerPath.set(file("src/main/resources/mmdskin.accesswidener"))
 }
 
 dependencies {
@@ -7,7 +11,7 @@ dependencies {
     modImplementation("dev.architectury:architectury:9.2.14")
     compileOnly("net.fabricmc:fabric-loader:${project.loader_version}")
 }
- 
+
 sourceSets {
     main {
         // 无特殊排除设置

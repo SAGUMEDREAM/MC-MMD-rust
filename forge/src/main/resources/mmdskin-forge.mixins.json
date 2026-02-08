@@ -6,6 +6,8 @@
   "refmap": "mmdskin-forge-refmap.json",
   "mixins": [],
   "client": [
+    "AvatarRendererMixin",
+    "DataInfRenderStateAvatarImpl",
     "ForgePlayerRendererMixin"
   ],
   "injectors": {

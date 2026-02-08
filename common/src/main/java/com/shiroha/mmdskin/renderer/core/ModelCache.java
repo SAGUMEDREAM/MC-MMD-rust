@@ -49,10 +49,8 @@ public class ModelCache<T> {
      */
     public void put(String key, T value) {
         CacheEntry<T> entry = new CacheEntry<>(value);
-        CacheEntry<T> old = cache.put(key, entry);
-        if (old == null) {
-            cacheSize.incrementAndGet();
-        }
+        cache.put(key, entry);
+        cacheSize.incrementAndGet();
         logger.debug("[{}] 添加缓存: {} (当前: {})", cacheName, key, cacheSize.get());
     }
     

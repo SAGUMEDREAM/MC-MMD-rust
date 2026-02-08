@@ -2,8 +2,6 @@ package com.shiroha.mmdskin;
 
 import java.io.File;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,56 +13,20 @@ import org.apache.logging.log4j.Logger;
 
 public class NativeFunc {
     public static final Logger logger = LogManager.getLogger();
-    private static volatile String gameDirectory;
-    private static final boolean isAndroid;
-    private static final boolean isLinux;
+    private static final String RuntimePath = new File(System.getProperty("java.home")).getParent();
+    private static final String gameDirectory = Minecraft.getInstance().gameDirectory.getAbsolutePath();
+    private static final boolean isAndroid = new File("/system/build.prop").exists();
+    private static final boolean isLinux = System.getProperty("os.name").toLowerCase().contains("linux");
     private static final boolean isWindows = System.getProperty("os.name").toLowerCase().contains("windows");
     private static final boolean isMacOS = System.getProperty("os.name").toLowerCase().contains("mac");
     private static final boolean isArm64;
     static {
         String arch = System.getProperty("os.arch").toLowerCase();
         isArm64 = arch.contains("aarch64") || arch.contains("arm64");
-        // Android 检测（FCL/PojavLauncher 等启动器使用标准 JVM）
-        boolean androidDetected = false;
-        String[] launcherEnvKeys = { "FCL_NATIVEDIR", "POJAV_NATIVEDIR", "MOD_ANDROID_RUNTIME", "FCL_VERSION_CODE" };
-        for (String key : launcherEnvKeys) {
-            String val = System.getenv(key);
-            if (val != null && !val.isEmpty()) {
-                androidDetected = true;
-                break;
-            }
-        }
-        if (!androidDetected) {
-            String androidRoot = System.getenv("ANDROID_ROOT");
-            String androidData = System.getenv("ANDROID_DATA");
-            androidDetected = (androidRoot != null && !androidRoot.isEmpty())
-                           || (androidData != null && !androidData.isEmpty());
-        }
-        if (!androidDetected) {
-            try {
-                androidDetected = new java.io.File("/system/build.prop").exists();
-            } catch (Exception ignored) {}
-        }
-        if (!androidDetected) {
-            String vendor = System.getProperty("java.vendor", "").toLowerCase();
-            String vmName = System.getProperty("java.vm.name", "").toLowerCase();
-            androidDetected = vendor.contains("android") || vmName.contains("dalvik") || vmName.contains("art");
-        }
-        isAndroid = androidDetected;
-        isLinux = System.getProperty("os.name").toLowerCase().contains("linux") && !isAndroid;
     }
-    static final String libraryVersion = "v1.0.1";
-    private static final String RELEASE_BASE_URL =
-        "https://github.com/shiroha-233/MC-MMD-rust/releases/download/" + libraryVersion + "/";
+    static final String libraryVersion = "v1.0.0";
     private static volatile NativeFunc inst;
     private static final Object lock = new Object();
-
-    private static String getGameDirectory() {
-        if (gameDirectory == null) {
-            gameDirectory = Minecraft.getInstance().gameDirectory.getAbsolutePath();
-        }
-        return gameDirectory;
-    }
 
     public static NativeFunc GetInst() {
         if (inst == null) {
@@ -84,7 +46,7 @@ public class NativeFunc {
      */
     private String getInstalledVersion(String fileName) {
         try {
-            Path versionPath = Paths.get(getGameDirectory(), fileName + ".version");
+            Path versionPath = Paths.get(gameDirectory, fileName + ".version");
             if (Files.exists(versionPath)) {
                 return Files.readString(versionPath).trim();
             }
@@ -99,7 +61,7 @@ public class NativeFunc {
      */
     private void saveInstalledVersion(String fileName, String version) {
         try {
-            Path versionPath = Paths.get(getGameDirectory(), fileName + ".version");
+            Path versionPath = Paths.get(gameDirectory, fileName + ".version");
             Files.writeString(versionPath, version);
         } catch (Exception e) {
             logger.warn("保存版本文件失败: " + e.getMessage());
@@ -111,8 +73,8 @@ public class NativeFunc {
      */
     private void renameOldLibrary(String fileName) {
         try {
-            Path libPath = Paths.get(getGameDirectory(), fileName);
-            Path oldPath = Paths.get(getGameDirectory(), fileName + ".old");
+            Path libPath = Paths.get(gameDirectory, fileName);
+            Path oldPath = Paths.get(gameDirectory, fileName + ".old");
             if (Files.exists(libPath)) {
                 // 删除可能存在的旧 .old 文件
                 Files.deleteIfExists(oldPath);
@@ -126,7 +88,7 @@ public class NativeFunc {
 
     private File extractNativeLibrary(String resourcePath, String fileName) {
         try {
-            Path targetPath = Paths.get(getGameDirectory(), fileName);
+            Path targetPath = Paths.get(gameDirectory, fileName);
             File targetFile = targetPath.toFile();
             
             // 检查已安装版本
@@ -139,25 +101,21 @@ public class NativeFunc {
             }
             
             // 版本不匹配或文件不存在，需要释放新版本
-            try (InputStream is = NativeFunc.class.getResourceAsStream(resourcePath)) {
-                if (is == null) {
-                    logger.warn("内置原生库未找到: " + resourcePath);
-                    if (targetFile.exists()) {
-                        logger.warn("将回退使用旧版本库: " + fileName + " (版本: " + (installedVersion != null ? installedVersion : "未知") + ")");
-                        return targetFile;
-                    }
-                    return null;
-                }
-                
-                if (targetFile.exists()) {
-                    // 版本不匹配，重命名旧文件
-                    logger.info("检测到版本变更: " + (installedVersion != null ? installedVersion : "未知") + " -> " + libraryVersion);
-                    renameOldLibrary(fileName);
-                }
-                
-                // 释放新版本
-                Files.copy(is, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            InputStream is = NativeFunc.class.getResourceAsStream(resourcePath);
+            if (is == null) {
+                logger.warn("内置原生库未找到: " + resourcePath);
+                return targetFile.exists() ? targetFile : null;
             }
+            
+            if (targetFile.exists()) {
+                // 版本不匹配，重命名旧文件
+                logger.info("检测到版本变更: " + (installedVersion != null ? installedVersion : "未知") + " -> " + libraryVersion);
+                renameOldLibrary(fileName);
+            }
+            
+            // 释放新版本
+            Files.copy(is, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            is.close();
             
             // 保存版本文件
             saveInstalledVersion(fileName, libraryVersion);
@@ -170,256 +128,66 @@ public class NativeFunc {
         }
     }
 
-    /**
-     * 从 GitHub Release 下载缺失的原生库
-     * @param downloadFileName Release 中的资产文件名（如 mmd_engine-windows-x64.dll）
-     * @param localFileName    本地保存的文件名（如 mmd_engine.dll）
-     */
-    private File downloadNativeLibrary(String downloadFileName, String localFileName) {
-        try {
-            Path targetPath = Paths.get(getGameDirectory(), localFileName);
-
-            // 已有版本匹配的文件，无需下载
-            String installedVersion = getInstalledVersion(localFileName);
-            if (targetPath.toFile().exists() && libraryVersion.equals(installedVersion)) {
-                logger.info("原生库版本匹配，使用已下载的缓存: " + localFileName);
-                return targetPath.toFile();
-            }
-
-            String urlStr = RELEASE_BASE_URL + downloadFileName;
-            logger.info("正在从 GitHub 下载原生库: " + urlStr);
-
-            // GitHub Release 会 302 重定向到 CDN，手动跟随重定向
-            HttpURLConnection conn = null;
-            for (int i = 0; i < 5; i++) {
-                conn = (HttpURLConnection) new URL(urlStr).openConnection();
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(60000);
-                conn.setRequestProperty("User-Agent", "MMDSkin-Mod/" + libraryVersion);
-
-                int code = conn.getResponseCode();
-                if (code == HttpURLConnection.HTTP_MOVED_TEMP
-                        || code == HttpURLConnection.HTTP_MOVED_PERM
-                        || code == 307 || code == 308) {
-                    urlStr = conn.getHeaderField("Location");
-                    conn.disconnect();
-                    continue;
-                }
-                break;
-            }
-
-            if (conn == null || conn.getResponseCode() != 200) {
-                logger.warn("下载失败，HTTP 状态码: " + (conn != null ? conn.getResponseCode() : "无连接"));
-                if (conn != null) conn.disconnect();
-                return null;
-            }
-
-            long contentLength = conn.getContentLengthLong();
-            logger.info("开始下载，文件大小: " +
-                    (contentLength > 0 ? (contentLength / 1024) + " KB" : "未知"));
-
-            // 先下载到临时文件，完成后再移动，避免半成品文件
-            Path tempPath = Paths.get(getGameDirectory(), localFileName + ".download");
-            try (InputStream is = conn.getInputStream()) {
-                Files.copy(is, tempPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            // 旧文件存在时先重命名为 .old
-            if (Files.exists(targetPath)) {
-                renameOldLibrary(localFileName);
-            }
-
-            Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            conn.disconnect();
-            saveInstalledVersion(localFileName, libraryVersion);
-            logger.info("原生库下载完成: " + localFileName);
-            return targetPath.toFile();
-        } catch (Exception e) {
-            logger.error("下载原生库失败: " + downloadFileName, e);
-            try {
-                Files.deleteIfExists(Paths.get(getGameDirectory(), localFileName + ".download"));
-            } catch (Exception ignored) {}
-            return null;
-        }
-    }
-
-    private void initAndroid() {
-        logger.info("Android Env Detected! Arch: arm64");
-        logger.info("  os.name=" + System.getProperty("os.name") + " os.arch=" + System.getProperty("os.arch"));
-        logger.info("  FCL_NATIVEDIR=" + System.getenv("FCL_NATIVEDIR"));
-        logger.info("  POJAV_NATIVEDIR=" + System.getenv("POJAV_NATIVEDIR"));
-        logger.info("  MOD_ANDROID_RUNTIME=" + System.getenv("MOD_ANDROID_RUNTIME"));
-        logger.info("  LD_LIBRARY_PATH=" + System.getenv("LD_LIBRARY_PATH"));
-        logger.info("  gameDir=" + getGameDirectory());
-
-        String resourcePath = "/natives/android-arm64/libmmd_engine.so";
-        String soFileName = "libmmd_engine.so";
-
-        try {
-            logger.info("[Android] 策略1: System.loadLibrary(\"mmd_engine\")");
-            System.loadLibrary("mmd_engine");
-            logger.info("[Android] 策略1 成功！通过 LD_LIBRARY_PATH 加载");
-            return;
-        } catch (Error e) {
-            logger.warn("[Android] 策略1 失败: " + e.getMessage());
-        }
-
-        String modRuntimeDir = System.getenv("MOD_ANDROID_RUNTIME");
-        if (modRuntimeDir != null && !modRuntimeDir.isEmpty()) {
-            try {
-                File runtimeDir = new File(modRuntimeDir);
-                if (!runtimeDir.exists()) runtimeDir.mkdirs();
-                File targetFile = new File(runtimeDir, soFileName);
-
-                try (InputStream is = NativeFunc.class.getResourceAsStream(resourcePath)) {
-                    if (is != null) {
-                        Files.copy(is, targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        logger.info("[Android] 策略2: 已提取到 " + targetFile.getAbsolutePath() + " (" + targetFile.length() + " bytes)");
-                        System.load(targetFile.getAbsolutePath());
-                        logger.info("[Android] 策略2 成功！从 MOD_ANDROID_RUNTIME 加载");
-                        return;
-                    }
-                }
-            } catch (Exception | Error e) {
-                logger.warn("[Android] 策略2 失败 (MOD_ANDROID_RUNTIME): " + e.getMessage());
-            }
-        }
-
-        String pojavNativeDir = System.getenv("POJAV_NATIVEDIR");
-        if (pojavNativeDir != null && !pojavNativeDir.isEmpty()) {
-            try {
-                File nativeDir = new File(pojavNativeDir);
-                File targetFile = new File(nativeDir, soFileName);
-
-                try (InputStream is = NativeFunc.class.getResourceAsStream(resourcePath)) {
-                    if (is != null) {
-                        Files.copy(is, targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        logger.info("[Android] 策略3: 已提取到 " + targetFile.getAbsolutePath() + " (" + targetFile.length() + " bytes)");
-                        System.load(targetFile.getAbsolutePath());
-                        logger.info("[Android] 策略3 成功！从 POJAV_NATIVEDIR 加载");
-                        return;
-                    }
-                }
-            } catch (Exception | Error e) {
-                logger.warn("[Android] 策略3 失败 (POJAV_NATIVEDIR): " + e.getMessage());
-            }
-        }
-
-        File extracted = extractNativeLibrary(resourcePath, soFileName);
-        if (extracted != null) {
-            try {
-                logger.info("[Android] 策略4: 尝试从游戏目录加载 " + extracted.getAbsolutePath() + " (" + extracted.length() + " bytes)");
-                System.load(extracted.getAbsolutePath());
-                logger.info("[Android] 策略4 成功！从游戏目录加载");
-                return;
-            } catch (Error e) {
-                logger.error("[Android] 策略4 失败 (游戏目录): " + e.getClass().getName() + ": " + e.getMessage());
-            }
-        }
-
-        File downloaded = downloadNativeLibrary("libmmd_engine-android-arm64.so", soFileName);
-        if (downloaded != null) {
-            try {
-                logger.info("[Android] 策略5: 尝试加载下载的库 " + downloaded.getAbsolutePath());
-                System.load(downloaded.getAbsolutePath());
-                logger.info("[Android] 策略5 成功！从下载的文件加载");
-                return;
-            } catch (Error e) {
-                logger.error("[Android] 策略5 失败 (下载): " + e.getClass().getName() + ": " + e.getMessage());
-            }
-        }
-
-        throw new UnsatisfiedLinkError("[Android] 无法加载原生库 libmmd_engine.so，所有策略均失败。" +
-            "请检查日志获取详细信息，或从 " + RELEASE_BASE_URL + " 手动下载 libmmd_engine-android-arm64.so");
-    }
-
     private void LoadLibrary(File file) {
         System.load(file.getAbsolutePath());
     }
 
     private void Init() {
-        // Android 走专用加载流程
-        if (isAndroid) {
-            initAndroid();
-            return;
-        }
-        
         String resourcePath;
         String fileName;
-        String downloadFileName;
         
         if (isWindows) {
             String archDir = isArm64 ? "windows-arm64" : "windows-x64";
             logger.info("Windows Env Detected! Arch: " + archDir);
             resourcePath = "/natives/" + archDir + "/mmd_engine.dll";
             fileName = "mmd_engine.dll";
-            downloadFileName = "mmd_engine-" + archDir + ".dll";
         } else if (isMacOS) {
             String archDir = isArm64 ? "macos-arm64" : "macos-x64";
             logger.info("macOS Env Detected! Arch: " + archDir);
             resourcePath = "/natives/" + archDir + "/libmmd_engine.dylib";
             fileName = "libmmd_engine.dylib";
-            downloadFileName = "libmmd_engine-" + archDir + ".dylib";
-        } else if (isLinux) {
+        } else if (isLinux && !isAndroid) {
             String archDir = isArm64 ? "linux-arm64" : "linux-x64";
             logger.info("Linux Env Detected! Arch: " + archDir);
             resourcePath = "/natives/" + archDir + "/libmmd_engine.so";
             fileName = "libmmd_engine.so";
-            downloadFileName = "libmmd_engine-" + archDir + ".so";
+        } else if (isLinux && isAndroid) {
+            logger.info("Android Env Detected!");
+            LoadLibrary(new File(RuntimePath, "libc++_shared.so"));
+            LoadLibrary(new File(RuntimePath, "KAIMyEntitySaba.so"));
+            return;
         } else {
             String osName = System.getProperty("os.name");
             logger.error("不支持的操作系统: " + osName);
             throw new UnsupportedOperationException("Unsupported OS: " + osName);
         }
         
-        File libFile = new File(getGameDirectory(), fileName);
+        File libFile = new File(gameDirectory, fileName);
         
         // 1. 优先从模组内置资源提取（确保版本一致）
         File extracted = extractNativeLibrary(resourcePath, fileName);
         if (extracted != null) {
             try {
-                logger.info("尝试加载内置库: " + extracted.getAbsolutePath() + " (" + extracted.length() + " bytes)");
                 LoadLibrary(extracted);
                 return;
             } catch (Error e) {
-                logger.error("内置库加载失败: " + e.getClass().getName() + ": " + e.getMessage(), e);
+                logger.warn("内置库加载失败，尝试外部文件: " + e.getMessage());
             }
         }
         
-        // 2. 内置资源不可用时，从 GitHub Release 自动下载
-        File downloaded = downloadNativeLibrary(downloadFileName, fileName);
-        if (downloaded != null) {
+        // 2. 回退到游戏目录的外部文件（用户自定义版本）
+        if (libFile.exists()) {
             try {
-                logger.info("尝试加载下载的库: " + downloaded.getAbsolutePath() + " (" + downloaded.length() + " bytes)");
-                LoadLibrary(downloaded);
+                LoadLibrary(libFile);
+                logger.info("已从游戏目录加载原生库: " + fileName);
                 return;
             } catch (Error e) {
-                logger.error("下载的库加载失败: " + e.getClass().getName() + ": " + e.getMessage(), e);
+                logger.error("外部库文件也无法加载: " + e.getMessage());
             }
         }
         
-        // 3. 回退到游戏目录的外部文件（用户自定义版本）
-        // 同时检查不带后缀的文件名（如 mmd_engine.dll）和带平台后缀的文件名（如 mmd_engine-windows-x64.dll）
-        File[] candidates = new File[] {
-            libFile,
-            new File(getGameDirectory(), downloadFileName)
-        };
-        for (File candidate : candidates) {
-            if (candidate.exists()) {
-                try {
-                    LoadLibrary(candidate);
-                    logger.info("已从游戏目录加载原生库: " + candidate.getName());
-                    return;
-                } catch (Error e) {
-                    logger.error("外部库文件加载失败: " + candidate.getName() + " - " + e.getMessage());
-                }
-            }
-        }
-        
-        // 4. 全部失败
-        throw new UnsatisfiedLinkError("无法加载原生库: " + fileName +
-            "（也尝试了 " + downloadFileName + "），请检查网络连接或从 " + RELEASE_BASE_URL + " 手动下载");
+        // 3. 全部失败
+        throw new UnsatisfiedLinkError("无法加载原生库: " + fileName + "，请检查模组完整性或手动下载");
     }
 
     public native String GetVersion();
@@ -537,11 +305,12 @@ public class NativeFunc {
      * @param model 模型句柄
      * @param m00-m33 4x4变换矩阵的16个元素（列主序）
      */
+    @SuppressWarnings("JavadocReference")
     public native void SetModelTransform(long model,
-        float m00, float m01, float m02, float m03,
-        float m10, float m11, float m12, float m13,
-        float m20, float m21, float m22, float m23,
-        float m30, float m31, float m32, float m33);
+                                         float m00, float m01, float m02, float m03,
+                                         float m10, float m11, float m12, float m13,
+                                         float m20, float m21, float m22, float m23,
+                                         float m30, float m31, float m32, float m33);
     
     /**
      * 设置模型位置和朝向（简化版，用于惯性计算）

@@ -6,6 +6,8 @@
   "refmap": "mmdskin-fabric-refmap.json",
   "mixins": [],
   "client": [
+    "AvatarRendererMixin",
+    "DataInfRenderStateAvatarImpl",
     "FabricPlayerRendererMixin"
   ],
   "injectors": {

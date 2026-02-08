@@ -7,7 +7,6 @@ import com.shiroha.mmdskin.renderer.core.RenderContext;
 import com.shiroha.mmdskin.renderer.model.MMDModelManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
@@ -40,7 +39,6 @@ public class MmdSkinRenderer<T extends Entity> extends EntityRenderer<T> {
         // 检查模型缓存清理
         MMDModelManager.tick();
         
-        Minecraft MCinstance = Minecraft.getInstance();
         super.render(entityIn, entityYaw, tickDelta, matrixStackIn, bufferIn, packedLightIn);
         String animName = "";
         float bodyYaw = entityYaw;
@@ -73,7 +71,7 @@ public class MmdSkinRenderer<T extends Entity> extends EntityRenderer<T> {
                 matrixStackIn.scale(0.5f, 0.5f, 0.5f);
             }
         }
-        if(animName.isEmpty()){
+        if(animName == ""){
             if (entityIn.isVehicle() && (entityIn.getX() - entityIn.xo != 0.0f || entityIn.getZ() - entityIn.zo != 0.0f)) {
                 animName = "driven";
                 AnimStateChangeOnce(mwed, EntityAnimState.State.Driven, 0);
@@ -91,30 +89,25 @@ public class MmdSkinRenderer<T extends Entity> extends EntityRenderer<T> {
                 AnimStateChangeOnce(mwed, EntityAnimState.State.Idle, 0);
             }
         }
-        // 使用显式的 RenderContext 而不是调用栈检测
-        if(MmdSkinClient.calledFrom(6).contains("Inventory") || MmdSkinClient.calledFrom(6).contains("class_490")){ // net.minecraft.class_490 == net.minecraft.client.gui.screen.ingame.InventoryScreen
-            RenderSystem.setShader(GameRenderer::getPositionTexShader);
-            PoseStack PTS_modelViewStack = RenderSystem.getModelViewStack();
-            int PosX_in_inventory;
-            int PosY_in_inventory;
-            PosX_in_inventory = (MCinstance.screen.width - 176) / 2;
-            PosY_in_inventory = (MCinstance.screen.height - 166) / 2;
-            PTS_modelViewStack.translate(PosX_in_inventory+51, PosY_in_inventory+60, 50.0);
-            PTS_modelViewStack.pushPose();
-            PTS_modelViewStack.scale(20.0f,20.0f, -20.0f);
-            PTS_modelViewStack.scale(size[1], size[1], size[1]);
+        // MC 1.21.1: 使用传入的 PoseStack 进行渲染（移除 RenderSystem.getModelViewStack()）
+        // 检测库存屏幕渲染
+        boolean isInventory = MmdSkinClient.calledFrom(6).contains("Inventory") || MmdSkinClient.calledFrom(6).contains("class_490");
+        if(isInventory) {
+            matrixStackIn.pushPose();
+            matrixStackIn.scale(20.0f, 20.0f, -20.0f);
+            matrixStackIn.scale(size[1], size[1], size[1]);
             Quaternionf quaternionf = (new Quaternionf()).rotateZ((float)Math.PI);
             Quaternionf quaternionf1 = (new Quaternionf()).rotateX(-entityIn.getXRot() * ((float)Math.PI / 180F));
             Quaternionf quaternionf2 = (new Quaternionf()).rotateY(-entityIn.getYRot() * ((float)Math.PI / 180F));
             quaternionf.mul(quaternionf1);
             quaternionf.mul(quaternionf2);
-            PTS_modelViewStack.mulPose(quaternionf);
-            RenderSystem.setShader(GameRenderer::getRendertypeEntityCutoutNoCullShader);
-            model.model.render(entityIn, entityYaw, 0.0f, new Vector3f(0.0f), tickDelta, PTS_modelViewStack, packedLightIn, RenderContext.INVENTORY);
-            PTS_modelViewStack.popPose();
-        }else{
+            matrixStackIn.mulPose(quaternionf);
+            RenderSystem.setShader(GameRenderer::getRendertypeEntityTranslucentShader);
+            model.model.render(entityIn, entityYaw, 0.0f, new Vector3f(0.0f), tickDelta, matrixStackIn, packedLightIn, RenderContext.INVENTORY);
+            matrixStackIn.popPose();
+        } else {
             matrixStackIn.scale(size[0], size[0], size[0]);
-            RenderSystem.setShader(GameRenderer::getRendertypeEntityCutoutNoCullShader);
+            RenderSystem.setShader(GameRenderer::getRendertypeEntityTranslucentShader);
             model.model.render(entityIn, bodyYaw, bodyPitch, entityTrans, tickDelta, matrixStackIn, packedLightIn, RenderContext.WORLD);
         }
         matrixStackIn.popPose();

@@ -1,4 +1,4 @@
-package com.shiroha.mmdskin.ui.config;
+package com.shiroha.mmdskin.ui;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -51,7 +51,7 @@ public class MorphWheelConfig {
         }
     }
     
-    public static synchronized MorphWheelConfig getInstance() {
+    public static MorphWheelConfig getInstance() {
         if (instance == null) {
             instance = new MorphWheelConfig();
             instance.load();
@@ -98,17 +98,10 @@ public class MorphWheelConfig {
     }
     
     /**
-     * 获取显示的表情列表（返回不可变视图）
+     * 获取显示的表情列表
      */
     public List<MorphEntry> getDisplayedMorphs() {
-        return java.util.Collections.unmodifiableList(displayedMorphs);
-    }
-    
-    /**
-     * 设置显示的表情列表
-     */
-    public void setDisplayedMorphs(List<MorphEntry> morphs) {
-        this.displayedMorphs = new ArrayList<>(morphs);
+        return displayedMorphs;
     }
     
     /**
@@ -203,9 +196,10 @@ public class MorphWheelConfig {
     }
     
     /**
-     * 重新加载（就地刷新当前实例数据）
+     * 重新加载
      */
     public void reload() {
-        load();
+        instance = null;
+        getInstance();
     }
 }

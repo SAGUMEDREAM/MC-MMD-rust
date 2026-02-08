@@ -1,4 +1,4 @@
-package com.shiroha.mmdskin.ui.config;
+package com.shiroha.mmdskin.ui;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -131,7 +131,8 @@ public class MorphWheelConfigScreen extends Screen {
     
     private void saveAndClose() {
         MorphWheelConfig config = MorphWheelConfig.getInstance();
-        config.setDisplayedMorphs(selectedMorphs);
+        config.getDisplayedMorphs().clear();
+        config.getDisplayedMorphs().addAll(selectedMorphs);
         config.save();
         logger.info("已保存 {} 个表情到轮盘", selectedMorphs.size());
         this.onClose();
@@ -139,7 +140,7 @@ public class MorphWheelConfigScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(guiGraphics);
+        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
         
         // 标题
         guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, 12, COLOR_TEXT_PRIMARY);
@@ -175,7 +176,7 @@ public class MorphWheelConfigScreen extends Screen {
             if (y + ITEM_HEIGHT > panelTop && y < panelBottom) {
                 MorphWheelConfig.MorphEntry entry = availableMorphs.get(i);
                 boolean hovered = mouseX >= leftPanelX && mouseX < leftPanelX + PANEL_WIDTH
-                    && mouseY >= Math.max(y, panelTop) && mouseY < Math.min(y + ITEM_HEIGHT, panelBottom);
+                    && mouseY >= y && mouseY < y + ITEM_HEIGHT;
                 if (hovered) hoveredLeftIndex = i;
                 
                 renderMorphItem(guiGraphics, leftPanelX + 5, y, PANEL_WIDTH - 10, entry, hovered);
@@ -194,7 +195,7 @@ public class MorphWheelConfigScreen extends Screen {
             if (y + ITEM_HEIGHT > panelTop && y < panelBottom) {
                 MorphWheelConfig.MorphEntry entry = selectedMorphs.get(i);
                 boolean hovered = mouseX >= rightPanelX && mouseX < rightPanelX + PANEL_WIDTH
-                    && mouseY >= Math.max(y, panelTop) && mouseY < Math.min(y + ITEM_HEIGHT, panelBottom);
+                    && mouseY >= y && mouseY < y + ITEM_HEIGHT;
                 if (hovered) hoveredRightIndex = i;
                 
                 renderMorphItem(guiGraphics, rightPanelX + 5, y, PANEL_WIDTH - 10, entry, hovered);
@@ -281,13 +282,13 @@ public class MorphWheelConfigScreen extends Screen {
     }
     
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int panelTop = HEADER_HEIGHT;
         int panelBottom = this.height - FOOTER_HEIGHT;
         int leftPanelX = this.width / 2 - PANEL_WIDTH - 15;
         int rightPanelX = this.width / 2 + 15;
         
-        int scrollAmount = (int) (-delta * 20);
+        int scrollAmount = (int) (-scrollY * 20);
         
         // 左侧面板滚动
         if (mouseX >= leftPanelX && mouseX < leftPanelX + PANEL_WIDTH 
@@ -303,7 +304,7 @@ public class MorphWheelConfigScreen extends Screen {
             return true;
         }
         
-        return super.mouseScrolled(mouseX, mouseY, delta);
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
     
     @Override

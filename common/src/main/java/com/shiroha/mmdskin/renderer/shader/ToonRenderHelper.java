@@ -1,10 +1,15 @@
 package com.shiroha.mmdskin.renderer.shader;
 
-import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.opengl.GlSampler;
+import com.mojang.blaze3d.opengl.GlStateManager;
+import com.mojang.blaze3d.platform.DestFactor;
+import com.mojang.blaze3d.platform.SourceFactor;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.textures.GpuSampler;
 import com.shiroha.mmdskin.NativeFunc;
+import com.shiroha.mmdskin.util.GlStateManagerPlus;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.TextureManager;
 import org.lwjgl.opengl.GL46C;
 
@@ -56,10 +61,10 @@ public class ToonRenderHelper {
     public static void prepareRenderState(int vao) {
         BufferUploader.reset();
         GL46C.glBindVertexArray(vao);
-        RenderSystem.enableBlend();
-        RenderSystem.enableDepthTest();
-        RenderSystem.blendEquation(GL46C.GL_FUNC_ADD);
-        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        GlStateManager._enableBlend();
+        GlStateManager._enableDepthTest();
+        GlStateManagerPlus.blendEquation(GL46C.GL_FUNC_ADD);
+        GlStateManagerPlus.blendFunc(SourceFactor.SRC_ALPHA, DestFactor.ONE_MINUS_SRC_ALPHA);
     }
     
     /**
@@ -70,7 +75,7 @@ public class ToonRenderHelper {
         GL46C.glBindBuffer(GL46C.GL_ELEMENT_ARRAY_BUFFER, 0);
         GL46C.glBindVertexArray(0);
         GL46C.glUseProgram(0);
-        RenderSystem.activeTexture(GL46C.GL_TEXTURE0);
+        GlStateManager._activeTexture(GL46C.GL_TEXTURE0);
         BufferUploader.reset();
     }
     
@@ -87,7 +92,7 @@ public class ToonRenderHelper {
      */
     public static void setupOutlineCulling() {
         GL46C.glCullFace(GL46C.GL_FRONT);
-        RenderSystem.enableCull();
+        GlStateManager._enableCull();
     }
     
     /**
@@ -126,7 +131,7 @@ public class ToonRenderHelper {
     public static void drawSubMeshesMain(Minecraft mc, NativeFunc nf, long model, 
                                          int indexElementSize, int indexType,
                                          MaterialProvider materialProvider) {
-        RenderSystem.activeTexture(GL46C.GL_TEXTURE0);
+        GlStateManager._activeTexture(GL46C.GL_TEXTURE0);
         long subMeshCount = nf.GetSubMeshCount(model);
         
         for (long i = 0; i < subMeshCount; ++i) {
@@ -138,15 +143,21 @@ public class ToonRenderHelper {
             
             // 双面材质处理
             if (nf.GetMaterialBothFace(model, materialID)) {
-                RenderSystem.disableCull();
+                GlStateManager._disableCull();
             } else {
-                RenderSystem.enableCull();
+                GlStateManager._enableCull();
             }
             
             // 绑定纹理
             int texId = materialProvider.getTextureId(materialID);
             if (texId == 0) {
-                mc.getEntityRenderDispatcher().textureManager.bindForSetup(TextureManager.INTENTIONAL_MISSING_TEXTURE);
+                TextureManager tm = Minecraft.getInstance().getTextureManager();
+                AbstractTexture texture = tm.getTexture(TextureManager.INTENTIONAL_MISSING_TEXTURE);
+                GpuSampler sampler = texture.getSampler();
+                if (sampler instanceof GlSampler glSampler) {
+                    int glId = glSampler.getId();
+                    GL46C.glBindTexture(GL46C.GL_TEXTURE_2D, glId);
+                }
             } else {
                 GL46C.glBindTexture(GL46C.GL_TEXTURE_2D, texId);
             }

@@ -1,36 +1,37 @@
-package com.shiroha.mmdskin.ui.wheel;
+package com.shiroha.mmdskin.ui;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
-import com.shiroha.mmdskin.maid.MaidActionWheelScreen;
-import com.shiroha.mmdskin.maid.MaidModelSelectorScreen;
-import com.shiroha.mmdskin.ui.selector.MaterialVisibilityScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
- * 女仆配置轮盘界面
- * 对着女仆按住 B 打开，松开关闭
- * 提供模型切换/动作选择/材质控制三个入口
+ * 主配置轮盘界面
+ * 按住 Alt 打开，松开关闭
+ * 提供模型切换/动作选择/材质控制/模组设置四个入口
  */
-public class MaidConfigWheelScreen extends Screen {
+public class ConfigWheelScreen extends Screen {
+    @SuppressWarnings("unused") // 预留用于调试
+    private static final Logger logger = LogManager.getLogger();
     
     // 轮盘参数
-    private static final float WHEEL_SCREEN_RATIO = 0.45f;
-    private static final float INNER_RATIO = 0.35f;
-    private static final int LINE_COLOR = 0xFFD060A0;
-    private static final int LINE_COLOR_DIM = 0xCCD060A0;
+    private static final float WHEEL_SCREEN_RATIO = 0.50f;
+    private static final float INNER_RATIO = 0.30f;
+    private static final int LINE_COLOR = 0xFF60A0D0;
+    private static final int LINE_COLOR_DIM = 0xCC60A0D0;
     private static final int HIGHLIGHT_COLOR = 0x60FFFFFF;
-    private static final int CENTER_BG = 0xE0301828;
-    private static final int CENTER_BORDER = 0xFFD060A0;
+    private static final int CENTER_BG = 0xE0182030;
+    private static final int CENTER_BORDER = 0xFF60A0D0;
     private static final int TEXT_SHADOW = 0xFF000000;
     
     private final List<ConfigSlot> configSlots;
@@ -38,35 +39,43 @@ public class MaidConfigWheelScreen extends Screen {
     private int centerX, centerY;
     private int outerRadius, innerRadius;
     
-    // 女仆信息
-    private final UUID maidUUID;
-    private final int maidEntityId;
-    private final String maidName;
-    
-    // 监控的按键
+    // 监控的按键（用于检测松开）
     private final int monitoredKey;
     
-    public MaidConfigWheelScreen(UUID maidUUID, int maidEntityId, String maidName, int keyCode) {
-        super(Component.translatable("gui.mmdskin.maid_config_wheel"));
-        this.maidUUID = maidUUID;
-        this.maidEntityId = maidEntityId;
-        this.maidName = maidName;
+    // 模组设置界面打开回调（由平台实现）
+    private static Supplier<Screen> modSettingsScreenFactory;
+    
+    public ConfigWheelScreen(int keyCode) {
+        super(Component.translatable("gui.mmdskin.config_wheel"));
         this.monitoredKey = keyCode;
         this.configSlots = new ArrayList<>();
         initConfigSlots();
     }
     
+    /**
+     * 设置模组设置界面工厂（由 Fabric/Forge 平台调用）
+     */
+    public static void setModSettingsScreenFactory(Supplier<Screen> factory) {
+        modSettingsScreenFactory = factory;
+    }
+    
     private void initConfigSlots() {
-        // 三个配置入口
+        // 五个配置入口
         configSlots.add(new ConfigSlot("model", 
-            Component.translatable("gui.mmdskin.maid.model_switch").getString(),
-            "🎭", this::openMaidModelSelector));
+            Component.translatable("gui.mmdskin.config.model_switch").getString(),
+            "🎭", this::openModelSelector));
         configSlots.add(new ConfigSlot("action", 
-            Component.translatable("gui.mmdskin.maid.action_select").getString(),
-            "🎬", this::openMaidActionWheel));
+            Component.translatable("gui.mmdskin.config.action_select").getString(),
+            "🎬", this::openActionWheel));
+        configSlots.add(new ConfigSlot("morph", 
+            Component.translatable("gui.mmdskin.config.morph_select").getString(),
+            "😊", this::openMorphWheel));
         configSlots.add(new ConfigSlot("material", 
-            Component.translatable("gui.mmdskin.maid.material_control").getString(),
-            "👕", this::openMaidMaterialVisibility));
+            Component.translatable("gui.mmdskin.config.material_control").getString(),
+            "👕", this::openMaterialVisibility));
+        configSlots.add(new ConfigSlot("settings", 
+            Component.translatable("gui.mmdskin.config.mod_settings").getString(),
+            "⚙", this::openModSettings));
     }
 
     @Override
@@ -95,8 +104,10 @@ public class MaidConfigWheelScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        // 检测按键是否松开
         long window = Minecraft.getInstance().getWindow().getWindow();
         if (!isKeyDown(window, monitoredKey)) {
+            // 按键松开，执行选中的操作并关闭
             if (selectedSlot >= 0 && selectedSlot < configSlots.size()) {
                 ConfigSlot slot = configSlots.get(selectedSlot);
                 this.onClose();
@@ -154,8 +165,7 @@ public class MaidConfigWheelScreen extends Screen {
         int b = color & 0xFF;
         int a = (color >> 24) & 0xFF;
         
-        BufferBuilder bufferBuilder = Tesselator.getInstance().getBuilder();
-        bufferBuilder.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        BufferBuilder bufferBuilder = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
         
         int steps = 32;
         for (int i = 0; i <= steps; i++) {
@@ -165,14 +175,14 @@ public class MaidConfigWheelScreen extends Screen {
             
             float iX = centerX + cosA * innerRadius;
             float iY = centerY + sinA * innerRadius;
-            bufferBuilder.vertex(matrix, iX, iY, 0).color(r, g, b, a / 2).endVertex();
+            bufferBuilder.addVertex(matrix, iX, iY, 0).setColor(r, g, b, a / 2);
             
             float oX = centerX + cosA * outerRadius;
             float oY = centerY + sinA * outerRadius;
-            bufferBuilder.vertex(matrix, oX, oY, 0).color(r, g, b, a).endVertex();
+            bufferBuilder.addVertex(matrix, oX, oY, 0).setColor(r, g, b, a);
         }
         
-        BufferUploader.drawWithShader(bufferBuilder.end());
+        BufferUploader.drawWithShader(bufferBuilder.buildOrThrow());
     }
 
     private void renderDividerLines(GuiGraphics guiGraphics) {
@@ -218,13 +228,12 @@ public class MaidConfigWheelScreen extends Screen {
         int b = color & 0xFF;
         int a = (color >> 24) & 0xFF;
         
-        BufferBuilder bufferBuilder = Tesselator.getInstance().getBuilder();
-        bufferBuilder.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
-        bufferBuilder.vertex(matrix, x1 + px, y1 + py, 0).color(r, g, b, a).endVertex();
-        bufferBuilder.vertex(matrix, x1 - px, y1 - py, 0).color(r, g, b, a).endVertex();
-        bufferBuilder.vertex(matrix, x2 + px, y2 + py, 0).color(r, g, b, a).endVertex();
-        bufferBuilder.vertex(matrix, x2 - px, y2 - py, 0).color(r, g, b, a).endVertex();
-        BufferUploader.drawWithShader(bufferBuilder.end());
+        BufferBuilder bufferBuilder = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        bufferBuilder.addVertex(matrix, x1 + px, y1 + py, 0).setColor(r, g, b, a);
+        bufferBuilder.addVertex(matrix, x1 - px, y1 - py, 0).setColor(r, g, b, a);
+        bufferBuilder.addVertex(matrix, x2 + px, y2 + py, 0).setColor(r, g, b, a);
+        bufferBuilder.addVertex(matrix, x2 - px, y2 - py, 0).setColor(r, g, b, a);
+        BufferUploader.drawWithShader(bufferBuilder.buildOrThrow());
     }
     
     private void renderOuterRing(GuiGraphics guiGraphics) {
@@ -243,8 +252,7 @@ public class MaidConfigWheelScreen extends Screen {
         int b = LINE_COLOR_DIM & 0xFF;
         int a = (LINE_COLOR_DIM >> 24) & 0xFF;
         
-        BufferBuilder bufferBuilder = Tesselator.getInstance().getBuilder();
-        bufferBuilder.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        BufferBuilder bufferBuilder = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
         
         for (int i = 0; i <= steps; i++) {
             double angle = Math.toRadians(i * 360.0 / steps);
@@ -256,11 +264,11 @@ public class MaidConfigWheelScreen extends Screen {
             float outerX = centerX + cosA * (outerRadius + thickness);
             float outerY = centerY + sinA * (outerRadius + thickness);
             
-            bufferBuilder.vertex(matrix, innerX, innerY, 0).color(r, g, b, a).endVertex();
-            bufferBuilder.vertex(matrix, outerX, outerY, 0).color(r, g, b, a).endVertex();
+            bufferBuilder.addVertex(matrix, innerX, innerY, 0).setColor(r, g, b, a);
+            bufferBuilder.addVertex(matrix, outerX, outerY, 0).setColor(r, g, b, a);
         }
         
-        BufferUploader.drawWithShader(bufferBuilder.end());
+        BufferUploader.drawWithShader(bufferBuilder.buildOrThrow());
         RenderSystem.disableBlend();
     }
 
@@ -272,25 +280,24 @@ public class MaidConfigWheelScreen extends Screen {
         RenderSystem.defaultBlendFunc();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         
-        BufferBuilder bufferBuilder = Tesselator.getInstance().getBuilder();
-        bufferBuilder.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
+        BufferBuilder bufferBuilder = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
         
         int bgR = (CENTER_BG >> 16) & 0xFF;
         int bgG = (CENTER_BG >> 8) & 0xFF;
         int bgB = CENTER_BG & 0xFF;
         int bgA = (CENTER_BG >> 24) & 0xFF;
         
-        bufferBuilder.vertex(matrix, centerX, centerY, 0).color(bgR, bgG, bgB, bgA).endVertex();
+        bufferBuilder.addVertex(matrix, centerX, centerY, 0).setColor(bgR, bgG, bgB, bgA);
         
         int steps = 48;
         for (int i = 0; i <= steps; i++) {
             double angle = Math.toRadians(i * 360.0 / steps);
             float x = centerX + (float) (Math.cos(angle) * innerRadius);
             float y = centerY + (float) (Math.sin(angle) * innerRadius);
-            bufferBuilder.vertex(matrix, x, y, 0).color(bgR, bgG, bgB, bgA).endVertex();
+            bufferBuilder.addVertex(matrix, x, y, 0).setColor(bgR, bgG, bgB, bgA);
         }
         
-        BufferUploader.drawWithShader(bufferBuilder.end());
+        BufferUploader.drawWithShader(bufferBuilder.buildOrThrow());
         
         // 边框
         float thickness = 3.0f;
@@ -299,8 +306,7 @@ public class MaidConfigWheelScreen extends Screen {
         int borderB = CENTER_BORDER & 0xFF;
         int borderA = (CENTER_BORDER >> 24) & 0xFF;
         
-        bufferBuilder = Tesselator.getInstance().getBuilder();
-        bufferBuilder.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        bufferBuilder = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
         
         for (int i = 0; i <= steps; i++) {
             double angle = Math.toRadians(i * 360.0 / steps);
@@ -312,18 +318,18 @@ public class MaidConfigWheelScreen extends Screen {
             float oX = centerX + cosA * (innerRadius + thickness);
             float oY = centerY + sinA * (innerRadius + thickness);
             
-            bufferBuilder.vertex(matrix, iX, iY, 0).color(borderR, borderG, borderB, borderA).endVertex();
-            bufferBuilder.vertex(matrix, oX, oY, 0).color(borderR, borderG, borderB, borderA).endVertex();
+            bufferBuilder.addVertex(matrix, iX, iY, 0).setColor(borderR, borderG, borderB, borderA);
+            bufferBuilder.addVertex(matrix, oX, oY, 0).setColor(borderR, borderG, borderB, borderA);
         }
         
-        BufferUploader.drawWithShader(bufferBuilder.end());
+        BufferUploader.drawWithShader(bufferBuilder.buildOrThrow());
         RenderSystem.disableBlend();
         
-        // 中心显示女仆名称
-        String displayText = selectedSlot >= 0 ? configSlots.get(selectedSlot).name : maidName;
-        int textWidth = this.font.width(displayText);
-        guiGraphics.drawString(this.font, displayText, centerX - textWidth / 2 + 1, centerY - 3, TEXT_SHADOW, false);
-        guiGraphics.drawString(this.font, displayText, centerX - textWidth / 2, centerY - 4, 0xFFD060A0, false);
+        // 中心文字
+        String text = selectedSlot >= 0 ? configSlots.get(selectedSlot).name : "MMD Skin";
+        int textWidth = this.font.width(text);
+        guiGraphics.drawString(this.font, text, centerX - textWidth / 2 + 1, centerY - 3, TEXT_SHADOW, false);
+        guiGraphics.drawString(this.font, text, centerX - textWidth / 2, centerY - 4, 0xFF60A0D0, false);
     }
 
     private void renderSlotLabels(GuiGraphics guiGraphics) {
@@ -337,6 +343,7 @@ public class MaidConfigWheelScreen extends Screen {
             int textX = centerX + (int) (Math.cos(angle) * textRadius);
             int textY = centerY + (int) (Math.sin(angle) * textRadius);
             
+            // 图标
             int iconWidth = this.font.width(slot.icon);
             boolean isSelected = (i == selectedSlot);
             int iconColor = isSelected ? 0xFFFFFFFF : 0xFFCCDDEE;
@@ -344,6 +351,7 @@ public class MaidConfigWheelScreen extends Screen {
             guiGraphics.drawString(this.font, slot.icon, textX - iconWidth / 2 + 1, textY - 11, TEXT_SHADOW, false);
             guiGraphics.drawString(this.font, slot.icon, textX - iconWidth / 2, textY - 12, iconColor, false);
             
+            // 名称
             int nameWidth = this.font.width(slot.name);
             guiGraphics.drawString(this.font, slot.name, textX - nameWidth / 2 + 1, textY + 3, TEXT_SHADOW, false);
             guiGraphics.drawString(this.font, slot.name, textX - nameWidth / 2, textY + 2, iconColor, false);
@@ -356,6 +364,11 @@ public class MaidConfigWheelScreen extends Screen {
     }
 
     @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // 不渲染背景，保持透明无模糊
+    }
+
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == 256) {
             this.onClose();
@@ -364,27 +377,43 @@ public class MaidConfigWheelScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
     
-    // 女仆配置操作
-    private void openMaidModelSelector() {
-        Minecraft.getInstance().setScreen(new MaidModelSelectorScreen(maidUUID, maidEntityId, maidName));
+    // 配置入口操作
+    private void openModelSelector() {
+        Minecraft.getInstance().setScreen(new ModelSelectorScreen());
     }
     
-    private void openMaidActionWheel() {
-        Minecraft.getInstance().setScreen(new MaidActionWheelScreen(maidUUID, maidEntityId, maidName));
+    private void openActionWheel() {
+        Minecraft.getInstance().setScreen(new ActionWheelScreen());
     }
     
-    private void openMaidMaterialVisibility() {
-        MaterialVisibilityScreen screen = MaterialVisibilityScreen.createForMaid(maidUUID, maidName);
+    private void openMorphWheel() {
+        Minecraft.getInstance().setScreen(new MorphWheelScreen(monitoredKey));
+    }
+    
+    private void openMaterialVisibility() {
+        MaterialVisibilityScreen screen = MaterialVisibilityScreen.createForPlayer();
         if (screen != null) {
             Minecraft.getInstance().setScreen(screen);
         } else {
             Minecraft.getInstance().gui.getChat().addMessage(
-                Component.literal("§c未找到女仆模型，请先为女仆选择一个MMD模型"));
+                Component.literal("§c未找到玩家模型，请先选择一个MMD模型"));
+        }
+    }
+    
+    private void openModSettings() {
+        if (modSettingsScreenFactory != null) {
+            Screen settingsScreen = modSettingsScreenFactory.get();
+            if (settingsScreen != null) {
+                Minecraft.getInstance().setScreen(settingsScreen);
+            }
+        } else {
+            Minecraft.getInstance().gui.getChat().addMessage(
+                Component.literal("§c模组设置界面未初始化"));
         }
     }
 
-    @SuppressWarnings("unused")
     private static class ConfigSlot {
+        @SuppressWarnings("unused") // 预留用于配置持久化
         final String id;
         final String name;
         final String icon;

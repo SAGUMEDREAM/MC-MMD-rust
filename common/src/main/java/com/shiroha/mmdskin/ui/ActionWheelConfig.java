@@ -1,4 +1,4 @@
-package com.shiroha.mmdskin.ui.config;
+package com.shiroha.mmdskin.ui;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -9,7 +9,6 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.*;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -33,7 +32,7 @@ public class ActionWheelConfig {
         scanAvailableActions();
     }
 
-    public static synchronized ActionWheelConfig getInstance() {
+    public static ActionWheelConfig getInstance() {
         if (instance == null) {
             instance = new ActionWheelConfig();
             instance.load(); // 只在首次创建时加载
@@ -44,7 +43,7 @@ public class ActionWheelConfig {
     /**
      * 重置实例（用于测试或强制重新加载）
      */
-    public static synchronized void reset() {
+    public static void reset() {
         instance = null;
     }
 
@@ -149,14 +148,14 @@ public class ActionWheelConfig {
      * 获取轮盘显示的动作列表
      */
     public List<ActionEntry> getDisplayedActions() {
-        return Collections.unmodifiableList(displayedActions);
+        return displayedActions;
     }
 
     /**
      * 获取所有可用的动作列表
      */
     public List<ActionEntry> getAvailableActions() {
-        return Collections.unmodifiableList(availableActions);
+        return availableActions;
     }
 
     /**

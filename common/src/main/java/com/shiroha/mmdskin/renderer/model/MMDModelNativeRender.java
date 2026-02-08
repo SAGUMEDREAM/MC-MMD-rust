@@ -2,16 +2,15 @@ package com.shiroha.mmdskin.renderer.model;
 
 import com.shiroha.mmdskin.NativeFunc;
 import com.shiroha.mmdskin.renderer.core.IMMDModel;
-import com.shiroha.mmdskin.renderer.core.EyeTrackingHelper;
 import com.shiroha.mmdskin.renderer.core.RenderContext;
 import com.shiroha.mmdskin.renderer.resource.MMDTextureManager;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
+import com.mojang.blaze3d.vertex.MeshData;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -41,7 +40,6 @@ public class MMDModelNativeRender implements IMMDModel {
     // 模型数据
     long model;
     String modelDir;
-    private String cachedModelName;
     int vertexCount;
     
     // 顶点缓冲区（从 Rust 引擎获取蒙皮后的数据）
@@ -59,9 +57,6 @@ public class MMDModelNativeRender implements IMMDModel {
     
     // 材质
     Material[] mats;
-    
-    // 预分配临时对象（避免每帧分配）
-    private final Quaternionf tempQuat = new Quaternionf();
     
     // 时间追踪
     private long lastUpdateTime = -1;
@@ -152,9 +147,6 @@ public class MMDModelNativeRender implements IMMDModel {
             result.mats = mats;
             result.subMeshVertexBuffers = subMeshVertexBuffers;
             
-            // 启用自动眨眼
-            nf.SetAutoBlinkEnabled(model, true);
-            
             logger.info("原生渲染模型加载成功: 顶点={}, 索引={}, 子网格={}", vertexCount, idxCount, subMeshCount);
             return result;
             
@@ -220,8 +212,6 @@ public class MMDModelNativeRender implements IMMDModel {
         float bodyYaw = Mth.lerp(tickDelta, entityIn.yBodyRotO, entityIn.yBodyRot) * ((float) Math.PI / 180F);
         nf.SetModelPositionAndYaw(model, posX, posY, posZ, bodyYaw);
         
-        EyeTrackingHelper.updateEyeTracking(nf, model, entityIn, entityYaw, tickDelta, getModelName());
-        
         Update();
         RenderModel(entityIn, entityYaw, entityPitch, entityTrans, poseStack, packedLight);
     }
@@ -251,11 +241,10 @@ public class MMDModelNativeRender implements IMMDModel {
         
         // 变换矩阵
         poseStack.pushPose();
-        poseStack.mulPose(tempQuat.identity().rotateY(-entityYaw * ((float) Math.PI / 180F)));
-        poseStack.mulPose(tempQuat.identity().rotateX(entityPitch * ((float) Math.PI / 180F)));
+        poseStack.mulPose(new Quaternionf().rotateY(-entityYaw * ((float) Math.PI / 180F)));
+        poseStack.mulPose(new Quaternionf().rotateX(entityPitch * ((float) Math.PI / 180F)));
         poseStack.translate(entityTrans.x, entityTrans.y, entityTrans.z);
-        float baseScale = 0.09f * com.shiroha.mmdskin.config.ModelConfigManager.getConfig(getModelName()).modelScale;
-        poseStack.scale(baseScale, baseScale, baseScale);
+        poseStack.scale(0.09f, 0.09f, 0.09f);
         
         // 从 Rust 引擎获取蒙皮后的顶点数据
         int posSize = vertexCount * 12;
@@ -321,9 +310,7 @@ public class MMDModelNativeRender implements IMMDModel {
         }
         
         // 构建顶点数据
-        Tesselator tesselator = Tesselator.getInstance();
-        BufferBuilder builder = tesselator.getBuilder();
-        builder.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.NEW_ENTITY);
+        BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.NEW_ENTITY);
         
         Matrix4f pose = poseStack.last().pose();
         
@@ -345,29 +332,23 @@ public class MMDModelNativeRender implements IMMDModel {
             float u = uv0Buffer.getFloat(idx * 8);
             float v = uv0Buffer.getFloat(idx * 8 + 4);
             
-            builder.vertex(pose, px, py, pz)
-                   .color(255, 255, 255, 255)
-                   .uv(u, v)
-                   .overlayCoords(0, 10)
-                   .uv2(packedLight)
-                   .normal(poseStack.last().normal(), nx, ny, nz)
-                   .endVertex();
+            builder.addVertex(pose, px, py, pz)
+                   .setColor(255, 255, 255, 255)
+                   .setUv(u, v)
+                   .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY)
+                   .setLight(packedLight)
+                   .setNormal(poseStack.last(), nx, ny, nz);
         }
         
         // 上传并使用 Minecraft 原生渲染（Iris 兼容！）
-        BufferBuilder.RenderedBuffer rendered = builder.end();
+        MeshData rendered = builder.buildOrThrow();
         VertexBuffer vb = subMeshVertexBuffers[subMeshIndex];
         vb.bind();
         vb.upload(rendered);
         
-        ShaderInstance shader = RenderSystem.getShader();
-        if (shader == null) {
-            VertexBuffer.unbind();
-            return;
-        }
         Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
         Matrix4f projection = RenderSystem.getProjectionMatrix();
-        vb.drawWithShader(modelView, projection, shader);
+        vb.drawWithShader(modelView, projection, RenderSystem.getShader());
         
         VertexBuffer.unbind();
     }
@@ -401,14 +382,6 @@ public class MMDModelNativeRender implements IMMDModel {
     @Override
     public String GetModelDir() {
         return modelDir;
-    }
-    
-    @Override
-    public String getModelName() {
-        if (cachedModelName == null) {
-            cachedModelName = IMMDModel.super.getModelName();
-        }
-        return cachedModelName;
     }
     
     // 内部材质类
